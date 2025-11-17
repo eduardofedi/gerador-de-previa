@@ -1,3 +1,4 @@
+import { GoogleGenAI, Modality } from "@google/genai";
 import { StickerShape, StickerType, RectangleOrientation } from '../types';
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -21,8 +22,8 @@ const createPrompt = (shape: StickerShape, type: StickerType, orientation: Recta
   if (shape === StickerShape.Rectangle) {
     const orientationDesc =
       orientation === RectangleOrientation.Portrait
-        ? 'em orientação de retrato (mais alto do que largo) com proporção 3:4'
-        : 'em orientação de paisagem (mais largo do que alto) com proporção 4:3';
+        ? 'em orientação de retrato (mais alto do que largo) com uma proporção de 3:4'
+        : 'em orientação de paisagem (mais largo do que alto) com uma proporção de 4:3';
 
     shapeDescription = `retangular ${orientationDesc}`;
   } else {
@@ -34,22 +35,24 @@ const createPrompt = (shape: StickerShape, type: StickerType, orientation: Recta
 
   const typeDescription = {
     [StickerType.Vinyl]:
-      'um adesivo de vinil impresso de alta qualidade com acabamento fosco ou semi-brilho.',
+      'um adesivo de vinil impresso de alta qualidade com um acabamento sutil fosco ou semi-brilho. Deve parecer plano e com corte preciso.',
     [StickerType.Domed]:
-      'um adesivo resinado com cúpula transparente brilhante, com profundidade visível.',
+      'um adesivo resinado (alto relevo) de alta qualidade. Isso significa que deve ter uma cúpula de resina de poliuretano transparente e brilhante por cima, conferindo-lhe profundidade visível e uma aparência tátil e brilhante. As bordas devem parecer suaves e chanfradas devido ao revestimento de resina transparente.',
   }[type];
 
   return `
-Você é um designer especialista em adesivos. Gere uma prévia do adesivo seguindo:
+Você é um designer gráfico especialista em produção de adesivos. Sua tarefa é converter a imagem fornecida pelo usuário em uma prévia pronta para produção de um adesivo.
 
-Formato: ${shapeDescription}
-Tipo: ${typeDescription}
-
-A imagem final deve ter duas camadas:
-1) Fundo com marca d’água repetida diagonalmente: "GID Adesivos - 2025 © / Todos os Direitos Reservados"
-2) Adesivo limpo, recortado e sem marca d’água por cima.
-
-Preserve completamente o logo enviado. Não altere textos ou elementos.
+**INSTRUÇÕES CRÍTICAS:**
+1. **Analisar a Imagem:** A entrada é provavelmente uma foto de um logotipo, fachada de loja ou um design existente. Identifique o assunto principal.
+2. **Limpar e Melhorar:** Se a imagem for uma foto (por exemplo, uma placa em uma parede), corrija qualquer distorção de perspectiva, remova o fundo original e realce as cores para que fiquem vibrantes para impressão. O resultado deve ser um gráfico limpo do adesivo.
+3. **PRESERVAR O CONTEÚDO PRINCIPAL:** Esta é a regra mais importante. Você NÃO DEVE alterar, redesenhar, modificar ou mudar nenhum texto, logotipo ou elementos de marca originais. A integridade do design do cliente é fundamental.
+4. **Aplicar Formato do Adesivo:**
+   * **Formato:** O adesivo final deve ter o formato ${shapeDescription}.
+   * **Tipo:** O adesivo deve representar visualmente ${typeDescription}.
+5. **Saída Final:** Gere uma única imagem de alta resolução da prévia do adesivo. A imagem final deve consistir em duas camadas distintas:
+   * **1. Camada de Fundo (Marca d'água):** O fundo NÃO deve ser branco sólido. Em vez disso, crie um padrão de marca d'água em mosaico. O texto "GID Adesivos - 2025 © / Todos os Direitos Reservados" deve ser repetido várias vezes em um tom de cinza claro e sutil para preencher toda a área de fundo da imagem. O padrão deve ser diagonal e repetido.
+   * **2. Camada do Adesivo:** A prévia do adesivo que você criar (limpa e no formato correto) deve ser colocada NA FRENTE desta camada de fundo com marca d'água. O adesivo em si não deve ter a marca d'água sobre ele. O resultado final é uma imagem onde o adesivo se destaca claramente sobre um fundo totalmente coberto pela marca d'água repetida.
 `.trim();
 };
 
@@ -59,33 +62,39 @@ export const generateStickerPreview = async (
   type: StickerType,
   orientation: RectangleOrientation
 ): Promise<string> => {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-  const base64 = await fileToBase64(imageFile);
-  const prompt = createPrompt(shape, type, orientation);
-
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-image-1",
-      prompt: prompt,
-      size: "1024x1024",
-      n: 1,
-      additional_inputs: {
-        image: base64,
-      },
-    }),
+  const ai = new GoogleGenAI({
+    apiKey: import.meta.env.VITE_GEMINI_API_KEY,
   });
 
-  const data = await response.json();
+  const base64Data = await fileToBase64(imageFile);
+  const mimeType = imageFile.type;
+  const prompt = createPrompt(shape, type, orientation);
 
-  if (!data.data || !data.data[0]?.b64_json) {
-    console.error("OpenAI Error:", data);
-    throw new Error("OpenAI não retornou imagem.");
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash-image",
+    contents: {
+      parts: [
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType,
+          },
+        },
+        {
+          text: prompt,
+        },
+      ],
+    },
+    config: {
+      responseModalities: [Modality.IMAGE],
+    },
+  });
+
+  for (const part of response.candidates?.[0]?.content?.parts || []) {
+    if (part.inlineData) {
+      return part.inlineData.data;
+    }
   }
 
-  return data.data[0].b64_json;
+  throw new Error("No image was generated by the API.");
 };
