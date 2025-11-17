@@ -20,7 +20,6 @@ const createPrompt = (
   type: StickerType,
   orientation: RectangleOrientation
 ): string => {
-
   let shapeDescription: string;
 
   if (shape === StickerShape.Rectangle) {
