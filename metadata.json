@@ -1,0 +1,5 @@
+{
+  "name": "Gerador de Prévias de Adesivos com IA",
+  "description": "Envie uma imagem e este aplicativo usará IA para gerar uma prévia de alta qualidade como um adesivo de vinil ou resinado em vários formatos, preservando as informações originais.",
+  "requestFramePermissions": []
+}
