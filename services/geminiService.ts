@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import { StickerShape, StickerType, RectangleOrientation } from '../types';
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -6,13 +5,13 @@ const fileToBase64 = (file: File): Promise<string> => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result.split(",")[1]);
+      if (typeof reader.result === 'string') {
+        resolve(reader.result.split(',')[1]);
       } else {
-        reject(new Error("Failed to read file as base64 string."));
+        reject(new Error('Failed to read file as base64.'));
       }
     };
-    reader.onerror = (error) => reject(error);
+    reader.onerror = reject;
   });
 };
 
@@ -21,48 +20,45 @@ const createPrompt = (
   type: StickerType,
   orientation: RectangleOrientation
 ): string => {
+
   let shapeDescription: string;
 
   if (shape === StickerShape.Rectangle) {
-    const orientationDesc =
+    shapeDescription =
       orientation === RectangleOrientation.Portrait
-        ? "em orientação de retrato (3:4)"
-        : "em orientação de paisagem (4:3)";
-    shapeDescription = `retangular ${orientationDesc}`;
+        ? 'retangular em retrato (3:4)'
+        : 'retangular em paisagem (4:3)';
   } else {
     shapeDescription = {
-      [StickerShape.Round]: "perfeitamente redondo",
-      [StickerShape.Square]: "perfeitamente quadrado",
+      [StickerShape.Round]: 'perfeitamente redondo',
+      [StickerShape.Square]: 'perfeitamente quadrado',
     }[shape];
   }
 
   const typeDescription = {
     [StickerType.Vinyl]:
-      "um adesivo de vinil de alta qualidade com acabamento fosco/semi-brilho, corte preciso e aparência plana.",
+      'um adesivo de vinil de alta qualidade, fosco/semi-brilho, corte preciso',
     [StickerType.Domed]:
-      "um adesivo resinado (alto relevo) com cúpula transparente brilhante e bordas suavemente chanfradas.",
+      'um adesivo resinado (alto relevo) com cúpula brilhante e bordas suaves',
   }[type];
 
   return `
-Você é um designer gráfico especialista em adesivos. Converta a imagem enviada em uma prévia profissional.
+Converta a imagem enviada em uma prévia profissional de adesivo.
 
-**REGRAS IMPORTANTES**
-1. Limpe a imagem, remova o fundo, corrija perspectiva, melhore nitidez.
-2. NÃO altere nenhum texto, logotipo ou marca.
-3. Formato final: ${shapeDescription}
-4. Tipo final: ${typeDescription}
+Regras:
+- NÃO altere nenhum texto, logotipo ou identidade.
+- Formato: ${shapeDescription}
+- Tipo: ${typeDescription}
 
-**SAÍDA FINAL OBRIGATÓRIA**
-Imagem composta por duas camadas:
+A saída final deve ter duas camadas:
 
-1) FUNDO — um padrão diagonal repetindo:
+1) Fundo: padrão diagonal repetindo
    "GID Adesivos - 2025 © / Todos os Direitos Reservados"
-   em tom cinza claro (marca d’água).
+   em cinza claro.
 
-2) ADESIVO — a prévia limpa e correta, SEM marca d’água, sobre o fundo.
+2) Adesivo: limpo, nítido, sem marca d’água.
 
-Gere uma única imagem final em alta resolução.
-`;
+Gere uma imagem final em alta resolução.`;
 };
 
 export const generateStickerPreview = async (
@@ -75,33 +71,31 @@ export const generateStickerPreview = async (
   const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
 
   if (!apiKey) {
-    throw new Error("A chave VITE_OPENAI_API_KEY não está configurada.");
+    throw new Error("Falta a variável VITE_OPENAI_API_KEY");
   }
 
-  const client = new OpenAI({ apiKey });
-
-  const base64Data = await fileToBase64(imageFile);
+  const base64Image = await fileToBase64(imageFile);
   const prompt = createPrompt(shape, type, orientation);
 
-  const result = await client.images.generate({
-    model: "gpt-image-1",
-    prompt: prompt,
-    size: "1024x1024",
-    // adiciona a imagem original no prompt
-    // o gpt-image-1 entende texto + imagem juntos
-    image: [
-      {
-        name: "input",
-        data: base64Data,
-      },
-    ],
+  const response = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-image-1",
+      prompt: prompt,
+      image: base64Image
+    }),
   });
 
-  const b64 = result.data[0].b64_json;
+  const data = await response.json();
 
-  if (!b64) {
-    throw new Error("OpenAI não gerou nenhuma imagem.");
+  if (!data?.data?.[0]?.b64_json) {
+    console.log("OpenAI Error:", data);
+    throw new Error("OpenAI não retornou imagem.");
   }
 
-  return b64; // <- mantém o formato original do seu app
+  return data.data[0].b64_json;
 };
