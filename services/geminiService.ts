@@ -57,7 +57,7 @@ export const generateStickerPreview = async (
     type: StickerType,
     orientation: RectangleOrientation
 ): Promise<string> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
     const base64Data = await fileToBase64(imageFile);
     const mimeType = imageFile.type;
