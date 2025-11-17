@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import OpenAI from "openai";
 import { StickerShape, StickerType, RectangleOrientation } from '../types';
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -6,88 +6,102 @@ const fileToBase64 = (file: File): Promise<string> => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result.split(',')[1]);
+      if (typeof reader.result === "string") {
+        resolve(reader.result.split(",")[1]);
       } else {
-        reject(new Error('Failed to read file as base64 string.'));
+        reject(new Error("Failed to read file as base64 string."));
       }
     };
     reader.onerror = (error) => reject(error);
   });
 };
 
-const createPrompt = (shape: StickerShape, type: StickerType, orientation: RectangleOrientation): string => {
+const createPrompt = (
+  shape: StickerShape,
+  type: StickerType,
+  orientation: RectangleOrientation
+): string => {
   let shapeDescription: string;
 
   if (shape === StickerShape.Rectangle) {
-    const orientationDesc = orientation === RectangleOrientation.Portrait 
-      ? 'em orientação de retrato (mais alto do que largo) com uma proporção de 3:4' 
-      : 'em orientação de paisagem (mais largo do que alto) com uma proporção de 4:3';
+    const orientationDesc =
+      orientation === RectangleOrientation.Portrait
+        ? "em orientação de retrato (3:4)"
+        : "em orientação de paisagem (4:3)";
     shapeDescription = `retangular ${orientationDesc}`;
   } else {
     shapeDescription = {
-      [StickerShape.Round]: 'perfeitamente redondo',
-      [StickerShape.Square]: 'perfeitamente quadrado',
+      [StickerShape.Round]: "perfeitamente redondo",
+      [StickerShape.Square]: "perfeitamente quadrado",
     }[shape];
   }
 
   const typeDescription = {
-    [StickerType.Vinyl]: 'um adesivo de vinil impresso de alta qualidade com um acabamento sutil fosco ou semi-brilho. Deve parecer plano e com corte preciso.',
-    [StickerType.Domed]: 'um adesivo resinado (alto relevo) de alta qualidade. Isso significa que deve ter uma cúpula de resina de poliuretano transparente e brilhante por cima, conferindo-lhe profundidade visível e uma aparência tátil e brilhante. As bordas devem parecer suaves e chanfradas devido ao revestimento de resina transparente.',
+    [StickerType.Vinyl]:
+      "um adesivo de vinil de alta qualidade com acabamento fosco/semi-brilho, corte preciso e aparência plana.",
+    [StickerType.Domed]:
+      "um adesivo resinado (alto relevo) com cúpula transparente brilhante e bordas suavemente chanfradas.",
   }[type];
 
-  return `Você é um designer gráfico especialista em produção de adesivos. Sua tarefa é converter a imagem fornecida pelo usuário em uma prévia pronta para produção de um adesivo.
+  return `
+Você é um designer gráfico especialista em adesivos. Converta a imagem enviada em uma prévia profissional.
 
-**INSTRUÇÕES CRÍTICAS:**
-1.  **Analisar a Imagem:** A entrada é provavelmente uma foto de um logotipo, fachada de loja ou um design existente. Identifique o assunto principal.
-2.  **Limpar e Melhorar:** Se a imagem for uma foto (por exemplo, uma placa em uma parede), corrija qualquer distorção de perspectiva, remova o fundo original e realce as cores para que fiquem vibrantes para impressão. O resultado deve ser um gráfico limpo do adesivo.
-3.  **PRESERVAR O CONTEÚDO PRINCIPAL:** Esta é a regra mais importante. Você NÃO DEVE alterar, redesenhar, modificar ou mudar nenhum texto, logotipo ou elementos de marca originais. A integridade do design do cliente é fundamental.
-4.  **Aplicar Formato do Adesivo:**
-    *   **Formato:** O adesivo final deve ter o formato ${shapeDescription}.
-    *   **Tipo:** O adesivo deve representar visualmente ${typeDescription}.
-5.  **Saída Final:** Gere uma única imagem de alta resolução da prévia do adesivo. A imagem final deve consistir em duas camadas distintas:
-    *   **1. Camada de Fundo (Marca d'água):** O fundo NÃO deve ser branco sólido. Em vez disso, crie um padrão de marca d'água em mosaico. O texto "GID Adesivos - 2025 © / Todos os Direitos Reservados" deve ser repetido várias vezes em um tom de cinza claro e sutil para preencher toda a área de fundo da imagem. O padrão deve ser diagonal e repetido.
-    *   **2. Camada do Adesivo:** A prévia do adesivo que você criar (limpa e no formato correto) deve ser colocada NA FRENTE desta camada de fundo com marca d'água. O adesivo em si não deve ter a marca d'água sobre ele. O resultado final é uma imagem onde o adesivo se destaca claramente sobre um fundo totalmente coberto pela marca d'água repetida.`;
+**REGRAS IMPORTANTES**
+1. Limpe a imagem, remova o fundo, corrija perspectiva, melhore nitidez.
+2. NÃO altere nenhum texto, logotipo ou marca.
+3. Formato final: ${shapeDescription}
+4. Tipo final: ${typeDescription}
+
+**SAÍDA FINAL OBRIGATÓRIA**
+Imagem composta por duas camadas:
+
+1) FUNDO — um padrão diagonal repetindo:
+   "GID Adesivos - 2025 © / Todos os Direitos Reservados"
+   em tom cinza claro (marca d’água).
+
+2) ADESIVO — a prévia limpa e correta, SEM marca d’água, sobre o fundo.
+
+Gere uma única imagem final em alta resolução.
+`;
 };
 
-
 export const generateStickerPreview = async (
-    imageFile: File,
-    shape: StickerShape,
-    type: StickerType,
-    orientation: RectangleOrientation
+  imageFile: File,
+  shape: StickerShape,
+  type: StickerType,
+  orientation: RectangleOrientation
 ): Promise<string> => {
-    const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
-    const base64Data = await fileToBase64(imageFile);
-    const mimeType = imageFile.type;
-    const prompt = createPrompt(shape, type, orientation);
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
 
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: {
-            parts: [
-                {
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: mimeType,
-                    },
-                },
-                {
-                    text: prompt,
-                },
-            ],
-        },
-        config: {
-            responseModalities: [Modality.IMAGE],
-        },
-    });
+  if (!apiKey) {
+    throw new Error("A chave VITE_OPENAI_API_KEY não está configurada.");
+  }
 
-    for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-            return part.inlineData.data;
-        }
-    }
+  const client = new OpenAI({ apiKey });
 
-    throw new Error('No image was generated by the API.');
+  const base64Data = await fileToBase64(imageFile);
+  const prompt = createPrompt(shape, type, orientation);
+
+  const result = await client.images.generate({
+    model: "gpt-image-1",
+    prompt: prompt,
+    size: "1024x1024",
+    // adiciona a imagem original no prompt
+    // o gpt-image-1 entende texto + imagem juntos
+    image: [
+      {
+        name: "input",
+        data: base64Data,
+      },
+    ],
+  });
+
+  const b64 = result.data[0].b64_json;
+
+  if (!b64) {
+    throw new Error("OpenAI não gerou nenhuma imagem.");
+  }
+
+  return b64; // <- mantém o formato original do seu app
 };
