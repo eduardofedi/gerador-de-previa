@@ -1,5 +1,6 @@
 
 import React, { useState, useCallback } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { StickerShape, StickerType, RectangleOrientation } from './types';
 import { generateStickerPreview } from './services/geminiService';
 import { UploadIcon, SparklesIcon, XCircleIcon } from './components/Icons';
@@ -186,6 +187,7 @@ const App: React.FC = () => {
                     </div>
                 </div>
             </main>
+            <Analytics />
         </div>
     );
 };
